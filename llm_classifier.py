@@ -2,10 +2,12 @@ import base64
 import csv
 import json
 import os
+import sys
 import tempfile
 import fitz
 
 from dataclasses import dataclass
+
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-DEFAULT_DOCUMENT_TYPES = {"image_based", "text_based", "mixed", "unclear"}
+DEFAULT_DOCUMENT_TYPES = {"image_based", "text_based", "unclear"}
 
 
 @dataclass
@@ -42,13 +44,15 @@ class LLMClassifier:
         self._validate_configuration()
         self.client = OpenAI(base_url=self.endpoint, api_key=self.api_key)
 
-
-    def classify_latest_documents(self) -> Path:
+    def classify_latest_documents(self, show_progress: bool = True) -> Path:
         """Read the CSV, classify latest PDFs, and write a new CSV output file."""
         rows = self._load_rows()
-        fieldnames = self._ensure_output_columns(rows)
 
-        for row in rows:
+        fieldnames = self._ensure_output_columns(rows)
+        total_rows = len(rows)
+
+        self._progress_update(0, total_rows, "Starting", show_progress)
+        for index, row in enumerate(rows, start=1):
             if self._is_latest(row):
                 classification = self._classify_row(row)
                 row["llm_document_type"] = classification.document_type
@@ -61,8 +65,32 @@ class LLMClassifier:
                 row.setdefault("llm_reason", "")
                 row.setdefault("llm_raw_json", "")
 
+            self._progress_update(index, total_rows, "Processing", show_progress)
+
+        self._progress_finish(total_rows, show_progress)
         self._write_rows_safely(rows, fieldnames)
         return self.output_csv
+
+
+    def _progress_update(self, current: int, total: int, label: str, show_progress: bool) -> None:
+        if not show_progress:
+            return
+
+        width = 30
+        total = max(total, 1)
+        filled = int(width * min(current, total) / total)
+        bar = "█" * filled + "-" * (width - filled)
+        percent = (min(current, total) / total) * 100
+        message = f"\r{label}: |{bar}| {current}/{total} ({percent:5.1f}%)"
+        sys.stderr.write(message)
+        sys.stderr.flush()
+
+    def _progress_finish(self, total: int, show_progress: bool) -> None:
+        if not show_progress:
+            return
+        self._progress_update(total, total, "Done", show_progress)
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
     def _validate_configuration(self) -> None:
         missing = []
@@ -70,6 +98,7 @@ class LLMClassifier:
             missing.append("AZURE_OPENAI_ENDPOINT")
         if not self.deployment_name:
             missing.append("AZURE_OPENAI_DEPLOYMENT")
+
         if not self.api_key:
             missing.append("AZURE_OPENAI_API_KEY")
         if missing:
@@ -162,10 +191,10 @@ class LLMClassifier:
 
     def _call_llm(self, pdf_path: Path, images: list[bytes]) -> str:
         prompt = (
-            "You are classifying PDFs by visual appearance. "
+            "You are classifying PDFs by visual appearance for a RAG application. "
             "Analyze the provided first pages of the PDF and return only valid JSON. "
             "Choose a document_type from: image_based, text_based, unclear. "
-            "Use image_based when the pages mainly contain photos, diagrams, scans, or other visuals. "
+            "Use image_based when the pages mainly contain photos, diagrams, drawings, or other visuals. "
             "Use text_based when the pages mainly contain readable text. "
             "Use unclear when the evidence is insufficient. "
             "Return this exact JSON shape: "
@@ -277,9 +306,20 @@ if __name__ == "__main__":
         help="Optional path for the classified CSV output",
         default=None,
     )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the progress bar",
+    )
     args = parser.parse_args()
 
     classifier = LLMClassifier(args.csv_path, args.pdf_root, args.output_csv)
-    output_path = classifier.classify_latest_documents()
+    output_path = classifier.classify_latest_documents(show_progress=not args.no_progress)
+
     print(f"Classified CSV written to: {output_path}")
+
+
+
+
+
 

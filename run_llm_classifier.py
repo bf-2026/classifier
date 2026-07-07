@@ -4,7 +4,7 @@ from llm_classifier import LLMClassifier
 
 if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parent
-    csv_path = base_dir / "pdf_inventory.csv"
+    csv_path = base_dir / "./output/pdf_inventory.csv"
 
     # Adjust this if your PDFs live in a different folder.
     pdf_root = base_dir
