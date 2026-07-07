@@ -42,12 +42,15 @@ def test_scan_and_export_marks_latest_revision_across_folders(tmp_path, monkeypa
     rows = read_csv_rows(output_csv)
 
     assert len(rows) == 3
-    assert {"filename", "relative_path", "group_key", "revision", "is_latest"}.issubset(
+    assert {"filename", "full_path", "relative_path", "group_key", "revision", "is_latest"}.issubset(
         rows[0].keys()
     )
 
     grouped = {row["filename"]: row for row in rows}
 
+    assert Path(
+        grouped["260220 Spezifikation Slickline-Wireline Service rev00a.pdf"]["full_path"]
+    ) == older.resolve()
     assert grouped["260220 Spezifikation Slickline-Wireline Service rev00a.pdf"][
         "relative_path"
     ] == "docs/folder_a/260220 Spezifikation Slickline-Wireline Service rev00a.pdf"
@@ -61,6 +64,9 @@ def test_scan_and_export_marks_latest_revision_across_folders(tmp_path, monkeypa
         "is_latest"
     ] == "False"
 
+    assert Path(
+        grouped["260220 Spezifikation Slickline-Wireline Service rev00b.pdf"]["full_path"]
+    ) == newer.resolve()
     assert grouped["260220 Spezifikation Slickline-Wireline Service rev00b.pdf"][
         "relative_path"
     ] == "docs/folder_b/260220 Spezifikation Slickline-Wireline Service rev00b.pdf"
@@ -74,6 +80,7 @@ def test_scan_and_export_marks_latest_revision_across_folders(tmp_path, monkeypa
         "is_latest"
     ] == "True"
 
+    assert Path(grouped["Standalone Document rev01.pdf"]["full_path"]) == other.resolve()
     assert grouped["Standalone Document rev01.pdf"]["relative_path"] == "docs/folder_b/Standalone Document rev01.pdf"
     assert grouped["Standalone Document rev01.pdf"]["is_latest"] == "True"
 
@@ -115,6 +122,7 @@ def test_scan_and_export_uses_creation_date_when_revision_number_matches(tmp_pat
     grouped = {row["filename"]: row for row in rows}
 
     assert len(rows) == 3
+    assert Path(grouped["250512 Spezifikation Schweißarbeiten_rev01.pdf"]["full_path"]) == rev01.resolve()
     assert grouped["250512 Spezifikation Schweißarbeiten_rev01.pdf"]["group_key"] == "250512 Spezifikation Schweißarbeiten"
     assert grouped["250512 Spezifikation Schweißarbeiten_rev01.pdf"]["revision"] == "rev01"
     assert grouped["250512 Spezifikation Schweißarbeiten_rev01.pdf"]["is_latest"] == "False"

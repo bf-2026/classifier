@@ -92,6 +92,7 @@ class PDFScanner:
 
                 item = {
                     "filename": file_path.name,
+                    "full_path": str(file_path.resolve()),
                     "relative_path": str(relative_path),
                     "group_key": group_key,
                     "revision": revision,
@@ -102,6 +103,7 @@ class PDFScanner:
                 }
 
                 grouped_files.setdefault(group_key, []).append(item)
+
 
         for items in grouped_files.values():
             latest_item = max(items, key=self._revision_sort_key)
@@ -160,6 +162,7 @@ class PDFScanner:
         """Append the extracted data to the CSV file if they are not already present."""
         fieldnames = [
             "filename",
+            "full_path",
             "relative_path",
             "group_key",
             "revision",
@@ -169,8 +172,8 @@ class PDFScanner:
             "md5_hash",
         ]
 
-
         # Ensure the output directory exists before writing.
+
 
         self.output.parent.mkdir(parents=True, exist_ok=True)
 
