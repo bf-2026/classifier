@@ -54,22 +54,29 @@ class LLMClassifier:
         self._progress_update(0, total_rows, "Starting", show_progress)
         for index, row in enumerate(rows, start=1):
             if self._is_latest(row):
-                classification = self._classify_row(row)
-                row["llm_document_type"] = classification.document_type
-                row["llm_confidence"] = f"{classification.confidence:.4f}"
-                row["llm_reason"] = classification.reason
-                row["llm_raw_json"] = classification.raw_json
+                if self._has_existing_classification(row):
+                    classification = self._classification_from_row(row)
+                    self._log_file_result(row, classification, skipped=True)
+                else:
+                    classification = self._classify_row(row)
+                    row["llm_document_type"] = classification.document_type
+                    row["llm_confidence"] = f"{classification.confidence:.4f}"
+                    row["llm_reason"] = classification.reason
+                    row["llm_raw_json"] = classification.raw_json
+                    self._log_file_result(row, classification, skipped=False)
             else:
                 row.setdefault("llm_document_type", "")
                 row.setdefault("llm_confidence", "")
                 row.setdefault("llm_reason", "")
                 row.setdefault("llm_raw_json", "")
+                self._log_file_result(row, None, skipped=True, reason="not latest")
 
             self._progress_update(index, total_rows, "Processing", show_progress)
 
         self._progress_finish(total_rows, show_progress)
         self._write_rows_safely(rows, fieldnames)
         return self.output_csv
+
 
 
     def _progress_update(self, current: int, total: int, label: str, show_progress: bool) -> None:
@@ -79,7 +86,8 @@ class LLMClassifier:
         width = 30
         total = max(total, 1)
         filled = int(width * min(current, total) / total)
-        bar = "█" * filled + "-" * (width - filled)
+        bar = "#" * filled + "-" * (width - filled)
+
         percent = (min(current, total) / total) * 100
         message = f"\r{label}: |{bar}| {current}/{total} ({percent:5.1f}%)"
         sys.stderr.write(message)
@@ -127,7 +135,42 @@ class LLMClassifier:
         value = str(row.get("is_latest", "")).strip().lower()
         return value in {"true", "1", "yes", "y"}
 
+    def _has_existing_classification(self, row: dict[str, Any]) -> bool:
+        return bool(str(row.get("llm_document_type", "")).strip())
+
+    def _classification_from_row(self, row: dict[str, Any]) -> LLMClassificationResult:
+        return LLMClassificationResult(
+            document_type=str(row.get("llm_document_type", "")).strip() or "unclear",
+            confidence=self._safe_float(row.get("llm_confidence", 0.0)),
+            reason=str(row.get("llm_reason", "")).strip() or "Existing classification.",
+            raw_json=str(row.get("llm_raw_json", "")).strip() or "{}",
+        )
+
+    def _safe_float(self, value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _log_file_result(
+        self,
+        row: dict[str, Any],
+        classification: LLMClassificationResult | None,
+        *,
+        skipped: bool,
+        reason: str | None = None,
+    ) -> None:
+        filename = row.get("filename") or row.get("relative_path") or "<unknown>"
+        if classification is None:
+            message = f"{filename}: skipped ({reason or 'skipped'})"
+        elif skipped:
+            message = f"{filename}: skipped (already {classification.document_type})"
+        else:
+            message = f"{filename}: {classification.document_type} ({classification.confidence:.4f})"
+        print(message, file=sys.stderr)
+
     def _classify_row(self, row: dict[str, Any]) -> LLMClassificationResult:
+
         pdf_path = self._resolve_pdf_path(row.get("relative_path", ""))
         images = self._render_first_pages(pdf_path, max_pages=2)
         raw_response_text = self._call_llm(pdf_path, images)

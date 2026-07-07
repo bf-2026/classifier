@@ -17,7 +17,8 @@ def read_csv_rows(csv_path: Path):
         return list(csv.DictReader(f))
 
 
-def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatch):
+def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatch, capsys):
+
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.test")
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-test")
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
@@ -54,7 +55,12 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
         ),
     )
 
-    result_path = classifier.classify_latest_documents()
+    result_path = classifier.classify_latest_documents(show_progress=False)
+
+    captured = capsys.readouterr()
+    assert "old.pdf: skipped (not latest)" in captured.err
+    assert "latest.pdf: image_based (0.9300)" in captured.err
+
 
     assert result_path == output_csv
     assert output_csv.exists()
@@ -67,3 +73,60 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
     assert rows_by_name["latest.pdf"]["llm_document_type"] == "image_based"
     assert rows_by_name["latest.pdf"]["llm_confidence"] == "0.9300"
     assert rows_by_name["latest.pdf"]["llm_reason"] == "Mostly visual pages."
+
+
+def test_classify_latest_documents_skips_already_classified_rows(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.test")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-test")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(llm_classifier, "fitz", object())
+    monkeypatch.setattr(llm_classifier, "OpenAI", _FakeOpenAI)
+
+    csv_path = tmp_path / "pdf_inventory.csv"
+    output_csv = tmp_path / "classified.csv"
+    pdf_root = tmp_path / "docs"
+    pdf_root.mkdir()
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "filename",
+                "relative_path",
+                "is_latest",
+                "llm_document_type",
+                "llm_confidence",
+                "llm_reason",
+                "llm_raw_json",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "filename": "already.pdf",
+                "relative_path": "docs/already.pdf",
+                "is_latest": "True",
+                "llm_document_type": "text_based",
+                "llm_confidence": "0.8500",
+                "llm_reason": "Previously classified.",
+                "llm_raw_json": '{"document_type":"text_based"}',
+            }
+        )
+
+    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root, output_csv=output_csv)
+
+    def fail_if_called(_row):
+        raise AssertionError("_classify_row should not be called for already classified files")
+
+    monkeypatch.setattr(classifier, "_classify_row", fail_if_called)
+
+    result_path = classifier.classify_latest_documents(show_progress=False)
+
+    captured = capsys.readouterr()
+    assert "already.pdf: skipped (already text_based)" in captured.err
+    assert result_path == output_csv
+
+    rows = read_csv_rows(output_csv)
+    assert rows[0]["llm_document_type"] == "text_based"
+    assert rows[0]["llm_confidence"] == "0.8500"
+
