@@ -18,7 +18,6 @@ def read_csv_rows(csv_path: Path):
 
 
 def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatch, capsys):
-
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.test")
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-test")
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
@@ -26,7 +25,6 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
     monkeypatch.setattr(llm_classifier, "OpenAI", _FakeOpenAI)
 
     csv_path = tmp_path / "pdf_inventory.csv"
-    output_csv = tmp_path / "classified.csv"
     pdf_root = tmp_path / "docs"
     pdf_root.mkdir()
 
@@ -43,7 +41,7 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
             ]
         )
 
-    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root, output_csv=output_csv)
+    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root)
     monkeypatch.setattr(
         classifier,
         "_classify_row",
@@ -61,11 +59,10 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
     assert "old.pdf: skipped (not latest)" in captured.err
     assert "latest.pdf: image_based (0.9300)" in captured.err
 
+    assert result_path == csv_path
+    assert csv_path.exists()
 
-    assert result_path == output_csv
-    assert output_csv.exists()
-
-    rows = read_csv_rows(output_csv)
+    rows = read_csv_rows(csv_path)
     rows_by_name = {row["filename"]: row for row in rows}
 
     assert rows_by_name["old.pdf"]["llm_document_type"] == ""
@@ -83,7 +80,6 @@ def test_classify_latest_documents_skips_already_classified_rows(tmp_path, monke
     monkeypatch.setattr(llm_classifier, "OpenAI", _FakeOpenAI)
 
     csv_path = tmp_path / "pdf_inventory.csv"
-    output_csv = tmp_path / "classified.csv"
     pdf_root = tmp_path / "docs"
     pdf_root.mkdir()
 
@@ -113,7 +109,7 @@ def test_classify_latest_documents_skips_already_classified_rows(tmp_path, monke
             }
         )
 
-    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root, output_csv=output_csv)
+    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root)
 
     def fail_if_called(_row):
         raise AssertionError("_classify_row should not be called for already classified files")
@@ -124,9 +120,10 @@ def test_classify_latest_documents_skips_already_classified_rows(tmp_path, monke
 
     captured = capsys.readouterr()
     assert "already.pdf: skipped (already text_based)" in captured.err
-    assert result_path == output_csv
+    assert result_path == csv_path
 
-    rows = read_csv_rows(output_csv)
+    rows = read_csv_rows(csv_path)
     assert rows[0]["llm_document_type"] == "text_based"
     assert rows[0]["llm_confidence"] == "0.8500"
+
 

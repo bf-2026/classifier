@@ -16,7 +16,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-DEFAULT_DOCUMENT_TYPES = {"unimportant", "important", "unclear"}
+DEFAULT_DOCUMENT_TYPES = {"image", "text"}
 
 
 @dataclass
@@ -33,9 +33,8 @@ class LLMClassifier:
     def __init__(self, csv_path: str | Path, pdf_root: str | Path, output_csv: str | Path | None = None):
         self.csv_path = Path(csv_path)
         self.pdf_root = Path(pdf_root)
-        self.output_csv = Path(output_csv) if output_csv else self.csv_path.with_name(
-            f"{self.csv_path.stem}_classified{self.csv_path.suffix}"
-        )
+        self.output_csv = Path(output_csv) if output_csv else self.csv_path
+
 
         self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         self.deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
@@ -45,7 +44,8 @@ class LLMClassifier:
         self.client = OpenAI(base_url=self.endpoint, api_key=self.api_key)
 
     def classify_latest_documents(self, show_progress: bool = True) -> Path:
-        """Read the CSV, classify latest PDFs, and write a new CSV output file."""
+        """Read the CSV, classify latest PDFs, and write the results back to the CSV."""
+
         rows = self._load_rows()
 
         fieldnames = self._ensure_output_columns(rows)
@@ -170,15 +170,20 @@ class LLMClassifier:
         print(message, file=sys.stderr)
 
     def _classify_row(self, row: dict[str, Any]) -> LLMClassificationResult:
-
-        pdf_path = self._resolve_pdf_path(row.get("relative_path", ""))
+        pdf_path = self._resolve_pdf_path(str(row.get("relative_path", "")))
         images = self._render_first_pages(pdf_path, max_pages=2)
         raw_response_text = self._call_llm(pdf_path, images)
         parsed = self._parse_llm_json(raw_response_text)
 
-        document_type = str(parsed.get("document_type", "unclear")).strip().lower()
+        document_type = str(parsed.get("asset_type", parsed.get("document_type", ""))).strip().lower()
+        document_type = document_type.replace("-", "_").replace(" ", "_")
+        if document_type in {"text_based", "textdocument", "text_document"}:
+            document_type = "text"
+        elif document_type in {"image_based", "imagedocument", "image_document"}:
+            document_type = "image"
+
         if document_type not in DEFAULT_DOCUMENT_TYPES:
-            document_type = "unclear"
+            document_type = "error"
 
         confidence = parsed.get("confidence", 0.0)
         try:
@@ -187,7 +192,7 @@ class LLMClassifier:
             confidence_value = 0.0
         confidence_value = max(0.0, min(1.0, confidence_value))
 
-        reason = str(parsed.get("reason", "")).strip()
+        reason = str(parsed.get("reasoning", parsed.get("reason", ""))).strip()
         if not reason:
             reason = "LLM returned no reason."
 
@@ -197,6 +202,7 @@ class LLMClassifier:
             reason=reason,
             raw_json=json.dumps(parsed, ensure_ascii=False),
         )
+
 
     def _resolve_pdf_path(self, relative_path: str) -> Path:
         path = Path(relative_path)
@@ -234,14 +240,22 @@ class LLMClassifier:
 
     def _call_llm(self, pdf_path: Path, images: list[bytes]) -> str:
         prompt = (
-            "You are classifying PDFs by visual appearance for a RAG application. "
-            "Analyze the provided first pages of the PDF and return only valid JSON. "
-            "Choose a document_type from: unimportant, important, unclear. "
-            "Use unimportant when the document consists of drawings, photos, or only of short transmittal messages or automated notification emails. "
-            "Use important when the pages mainly contain text that is relevant for the RAG. "
-            "Use unclear when the evidence is insufficient. "
-            "Return this exact JSON shape: "
-            '{"document_type":"unimportant","confidence":0.93,"reason":"The pages mainly contain photos, diagrams, and very little readable text."}'
+            "You are a document layout analysis engine. Analyze the visual layout and text density of the provided image "
+            "of a PDF's first page to determine its primary asset type. "
+            "\n\n### Asset Definitions\n"
+            "- 'text': The page primarily consists of readable text, structured documents, tables, data listings, or written correspondence (like letters and emails).\n"
+            "- 'image': The page is primarily a technical drawing, engineering blueprint, schematic, map, chart, or photographic image with little to no paragraphs of readable text.\n"
+            "\n\n### Classification Logic\n"
+            "1. If the page contains mostly text, lists, or an email layout, classify as 'text'.\n"
+            "2. If the page contains more than ~50% visual diagrams, technical drawings, or shapes, classify as 'image'.\n"
+            "\n\n### Output Format\n"
+            "Return ONLY a valid JSON object. You MUST generate the 'reasoning' field first to describe what visual components you see. "
+            "Follow this exact JSON shape:\n"
+            "{\n"
+            '  "reasoning": "Brief description of the visual layout (e.g., Contains a table and 3 paragraphs of text / Mostly an engineering schematic with a title block).",\n'
+            '  "asset_type": "text",\n'
+            '  "confidence": 0.95\n'
+            "}"
         )
 
         content = [{"type": "input_text", "text": prompt}]
@@ -346,9 +360,10 @@ if __name__ == "__main__":
     parser.add_argument("pdf_root", help="Root folder used to resolve relative_path entries")
     parser.add_argument(
         "--output-csv",
-        help="Optional path for the classified CSV output",
+        help="Optional path for the classified CSV output (defaults to the input CSV for in-place updates)",
         default=None,
     )
+
     parser.add_argument(
         "--no-progress",
         action="store_true",
