@@ -4,7 +4,9 @@ import json
 import os
 import sys
 import tempfile
+
 import fitz
+
 
 from dataclasses import dataclass
 
@@ -42,6 +44,7 @@ class LLMClassifier:
 
         self._validate_configuration()
         self.client = OpenAI(base_url=self.endpoint, api_key=self.api_key)
+        
 
     def classify_latest_documents(self, show_progress: bool = True) -> Path:
         """Read the CSV, classify latest PDFs, and write the results back to the CSV."""
@@ -49,58 +52,55 @@ class LLMClassifier:
         rows = self._load_rows()
 
         fieldnames = self._ensure_output_columns(rows)
-        total_rows = len(rows)
+        total_latest = sum(1 for row in rows if self._is_latest(row))
+        latest_index = 0
 
-        self._progress_update(0, total_rows, "Starting", show_progress)
-        for index, row in enumerate(rows, start=1):
+        for row in rows:
             if self._is_latest(row):
+                latest_index += 1
                 if self._has_existing_classification(row):
                     classification = self._classification_from_row(row)
-                    self._log_file_result(row, classification, skipped=True)
+                    self._log_file_result(
+                        row,
+                        classification,
+                        skipped=True,
+                        show_progress=show_progress,
+                        document_index=latest_index,
+                        document_total=total_latest,
+                    )
                 else:
-                    classification = self._classify_row(row)
+                    classification = self._classify_row(
+                        row,
+                        document_index=latest_index,
+                        document_total=total_latest,
+                        show_progress=show_progress,
+                    )
                     row["llm_document_type"] = classification.document_type
                     row["llm_confidence"] = f"{classification.confidence:.4f}"
                     row["llm_reason"] = classification.reason
                     row["llm_raw_json"] = classification.raw_json
-                    self._log_file_result(row, classification, skipped=False)
+                    self._log_file_result(
+                        row,
+                        classification,
+                        skipped=False,
+                        show_progress=show_progress,
+                        document_index=latest_index,
+                        document_total=total_latest,
+                    )
             else:
                 row.setdefault("llm_document_type", "")
                 row.setdefault("llm_confidence", "")
                 row.setdefault("llm_reason", "")
                 row.setdefault("llm_raw_json", "")
-                self._log_file_result(row, None, skipped=True, reason="not latest")
+                self._log_file_result(row, None, skipped=True, reason="not latest", show_progress=show_progress)
 
-            self._progress_update(index, total_rows, "Processing", show_progress)
 
-        self._progress_finish(total_rows, show_progress)
         self._write_rows_safely(rows, fieldnames)
         return self.output_csv
 
 
-
-    def _progress_update(self, current: int, total: int, label: str, show_progress: bool) -> None:
-        if not show_progress:
-            return
-
-        width = 30
-        total = max(total, 1)
-        filled = int(width * min(current, total) / total)
-        bar = "#" * filled + "-" * (width - filled)
-
-        percent = (min(current, total) / total) * 100
-        message = f"\r{label}: |{bar}| {current}/{total} ({percent:5.1f}%)"
-        sys.stderr.write(message)
-        sys.stderr.flush()
-
-    def _progress_finish(self, total: int, show_progress: bool) -> None:
-        if not show_progress:
-            return
-        self._progress_update(total, total, "Done", show_progress)
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
     def _validate_configuration(self) -> None:
+
         missing = []
         if not self.endpoint:
             missing.append("AZURE_OPENAI_ENDPOINT")
@@ -153,24 +153,46 @@ class LLMClassifier:
             return 0.0
 
     def _log_file_result(
+
         self,
         row: dict[str, Any],
         classification: LLMClassificationResult | None,
         *,
-        skipped: bool,
+                skipped: bool,
         reason: str | None = None,
+        show_progress: bool = False,
+        document_index: int | None = None,
+        document_total: int | None = None,
     ) -> None:
         filename = row.get("filename") or row.get("relative_path") or "<unknown>"
+        progress = (
+            f"[{document_index}/{document_total}] "
+            if document_index is not None and document_total is not None and document_total > 0
+            else ""
+        )
         if classification is None:
-            message = f"{filename}: skipped ({reason or 'skipped'})"
+            message = f"{progress}{filename}: skipped ({reason or 'skipped'})"
         elif skipped:
-            message = f"{filename}: skipped (already {classification.document_type})"
+            message = f"{progress}{filename}: skipped (already {classification.document_type})"
+        elif show_progress:
+            message = f"{progress}{filename} --> {classification.document_type} ({classification.confidence:.2f})"
         else:
-            message = f"{filename}: {classification.document_type} ({classification.confidence:.4f})"
+            message = f"{progress}{filename}: {classification.document_type} ({classification.confidence:.4f})"
         print(message, file=sys.stderr)
 
-    def _classify_row(self, row: dict[str, Any]) -> LLMClassificationResult:
+
+    def _classify_row(
+        self,
+        row: dict[str, Any],
+        *,
+                document_index: int | None = None,
+        document_total: int | None = None,
+        show_progress: bool = True,
+    ) -> LLMClassificationResult:
         pdf_path = self._resolve_pdf_path(str(row.get("relative_path", "")))
+        _ = show_progress, document_index, document_total
+
+
         images = self._render_first_pages(pdf_path, max_pages=2)
         raw_response_text = self._call_llm(pdf_path, images)
         parsed = self._parse_llm_json(raw_response_text)
@@ -196,18 +218,20 @@ class LLMClassifier:
         if not reason:
             reason = "LLM returned no reason."
 
-        return LLMClassificationResult(
+        classification = LLMClassificationResult(
             document_type=document_type,
             confidence=confidence_value,
             reason=reason,
             raw_json=json.dumps(parsed, ensure_ascii=False),
         )
-
+        return classification
 
     def _resolve_pdf_path(self, relative_path: str) -> Path:
+
         path = Path(relative_path)
         if path.is_absolute() and path.exists():
             return path
+
 
         candidates = [
             self.pdf_root / relative_path,
@@ -346,13 +370,16 @@ class LLMClassifier:
                 for row in rows:
                     writer.writerow({key: row.get(key, "") for key in fieldnames})
             temp_path.replace(self.output_csv)
+            print(f"Classified CSV written: {self.output_csv}")
         except Exception:
             if temp_path.exists():
                 temp_path.unlink(missing_ok=True)
             raise
 
 
+
 if __name__ == "__main__":
+
     import argparse
 
     parser = argparse.ArgumentParser(description="Classify latest PDFs in a scanner CSV with an LLM.")

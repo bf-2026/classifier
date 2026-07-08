@@ -14,4 +14,3 @@ if __name__ == "__main__":
         pdf_root=pdf_root,
     )
     output_path = classifier.classify_latest_documents()
-    print(f"Wrote classified CSV to: {output_path}")
