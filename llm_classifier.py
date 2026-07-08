@@ -16,7 +16,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-DEFAULT_DOCUMENT_TYPES = {"image_based", "text_based", "unclear"}
+DEFAULT_DOCUMENT_TYPES = {"unimportant", "important", "unclear"}
 
 
 @dataclass
@@ -236,12 +236,12 @@ class LLMClassifier:
         prompt = (
             "You are classifying PDFs by visual appearance for a RAG application. "
             "Analyze the provided first pages of the PDF and return only valid JSON. "
-            "Choose a document_type from: image_based, text_based, unclear. "
-            "Use image_based when the pages mainly contain photos, diagrams, drawings, or other visuals. "
-            "Use text_based when the pages mainly contain readable text. "
+            "Choose a document_type from: unimportant, important, unclear. "
+            "Use unimportant when the document consists of drawings, photos, or only of short transmittal messages or automated notification emails. "
+            "Use important when the pages mainly contain text that is relevant for the RAG. "
             "Use unclear when the evidence is insufficient. "
             "Return this exact JSON shape: "
-            '{"document_type":"image_based","confidence":0.93,"reason":"The pages mainly contain photos, diagrams, and very little readable text."}'
+            '{"document_type":"unimportant","confidence":0.93,"reason":"The pages mainly contain photos, diagrams, and very little readable text."}'
         )
 
         content = [{"type": "input_text", "text": prompt}]

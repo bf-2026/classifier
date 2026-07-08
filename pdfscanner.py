@@ -1,13 +1,13 @@
-import csv
 import hashlib
 import re
 from datetime import datetime
 from pathlib import Path
 
-
+from inventory_csv import PdfInventoryCsv
 
 
 class PDFScanner:
+
 
     """Scan a directory for PDF files and export their metadata to CSV."""
 
@@ -32,7 +32,8 @@ class PDFScanner:
             print(f"No PDF files found in '{self.dir}'.")
             return
 
-        existing_paths = self._load_existing_relative_paths()
+        inventory_store = PdfInventoryCsv(self.output)
+        existing_paths = inventory_store.load_existing_relative_paths()
         new_files = [
             item
             for item in pdf_files
@@ -43,28 +44,17 @@ class PDFScanner:
             print(f"No new PDF files to add to '{self.output}'.")
             return
 
-        self._write_to_csv(new_files)
+        inventory_store.write_rows(new_files)
+
         print(
             f"Success! Found {len(new_files)} new PDFs and saved them to '{self.output}'."
         )
 
-    def _load_existing_relative_paths(self) -> set[str]:
-        """Load relative paths already present in the CSV output file."""
-        if not self.output.exists() or self.output.stat().st_size == 0:
-            return set()
-
-        existing_paths = set()
-        with open(self.output, newline="", encoding="utf-8") as csv_file:
-            reader = csv.DictReader(csv_file)
-            for row in reader:
-                relative_path = row.get("relative_path")
-                if relative_path:
-                    existing_paths.add(self._normalize_relative_path(relative_path))
-        return existing_paths
-
     def _normalize_relative_path(self, relative_path: str) -> str:
         """Normalize paths so Windows and POSIX separators compare equally."""
         return Path(relative_path).as_posix()
+
+
 
     def _find_pdfs(self) -> list:
 
@@ -158,41 +148,10 @@ class PDFScanner:
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
 
-    def _write_to_csv(self, data: list):
-        """Append the extracted data to the CSV file if they are not already present."""
-        fieldnames = [
-            "filename",
-            "full_path",
-            "relative_path",
-            "group_key",
-            "revision",
-            "revision_number",
-            "creation_time",
-            "is_latest",
-            "md5_hash",
-        ]
-
-        # Ensure the output directory exists before writing.
-
-
-        self.output.parent.mkdir(parents=True, exist_ok=True)
-
-        file_exists = self.output.exists()
-        write_header = not file_exists or self.output.stat().st_size == 0
-
-        rows = [{key: item.get(key, "") for key in fieldnames} for item in data]
-
-        with open(self.output, mode="a", newline="", encoding="utf-8") as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-            if write_header:
-                writer.writeheader()
-            writer.writerows(rows)
-
-
-
-
+    
 
 # --- Example Usage ---
+
 if __name__ == "__main__":
     #TARGET_FOLDER = r"C:\Users\DELL\Lucas\DPA\DeebKBB\Daten_fuer_KI"
     TARGET_FOLDER = "./data"
