@@ -12,9 +12,19 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
+# Import Rich components
+from rich.console import Group
+from rich.live import Live
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+)
+from rich.table import Table
+
 from inventory_csv import PdfInventoryCsv
-
-
 
 
 class HTMLToTextParser(HTMLParser):
@@ -81,7 +91,6 @@ def build_inventory_row(pdf_path: Path, output_root: Path) -> dict[str, str]:
     except ValueError:
         relative_path = pdf_path.as_posix()
 
-
     creation_timestamp = pdf_path.stat().st_ctime
     return {
         "filename": pdf_path.name,
@@ -96,11 +105,7 @@ def build_inventory_row(pdf_path: Path, output_root: Path) -> dict[str, str]:
     }
 
 
-
-
-
 def get_msg_body(msg) -> str:
-
     body = safe_str(getattr(msg, "body", ""))
     if body:
         return body
@@ -196,7 +201,6 @@ def convert_msg_to_pdf(msg_path: Path, pdf_path: Path, inventory_csv: Path | Non
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         msg = extract_msg.Message(str(msg_path))
 
-
         meta = {
             "From": safe_str(getattr(msg, "sender", "")) or safe_str(getattr(msg, "sender_email", "")),
             "To": safe_str(getattr(msg, "to", "")),
@@ -215,9 +219,7 @@ def convert_msg_to_pdf(msg_path: Path, pdf_path: Path, inventory_csv: Path | Non
             )
         return True
 
-
-    except Exception as e:
-        print(f"[FAIL] {msg_path} -> {e}")
+    except Exception:
         return False
 
     finally:
@@ -226,7 +228,6 @@ def convert_msg_to_pdf(msg_path: Path, pdf_path: Path, inventory_csv: Path | Non
                 msg.close()
             except Exception:
                 pass
-
 
 
 def iter_msg_files(root: Path):
@@ -259,11 +260,12 @@ def main():
     output_root = Path(args.output_dir).expanduser().resolve()
     inventory_csv = Path(args.inventory_csv).expanduser().resolve()
 
-
     if not root.exists() or not root.is_dir():
         raise SystemExit(f"Folder does not exist or is not a directory: {root}")
 
     msg_files = list(iter_msg_files(root))
+    total_files = len(msg_files)
+    
     if not msg_files:
         print("No .msg files found.")
         return
@@ -271,18 +273,79 @@ def main():
     converted = 0
     failed = 0
 
-    for msg_path in msg_files:
-        rel_path = msg_path.relative_to(root)
-        pdf_path = output_root / rel_path.with_suffix(".pdf")
+    # 1. Setup the progress bar
+    progress = Progress(
+        TextColumn("[cyan]Processing PDFs[/cyan]"),
+        BarColumn(bar_width=30, complete_style="cyan", finished_style="bright_green"),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+    )
+    task_id = progress.add_task("converting", total=total_files)
 
-        ok = convert_msg_to_pdf(msg_path, pdf_path, inventory_csv=inventory_csv, output_root=output_root)
+    # 2. Live UI Layout Helper (Active state)
+    def make_layout(current_file: str, current_failed: int) -> Table:
+        grid = Table.grid(expand=True)
+        grid.add_column()
+        grid.add_row(progress)
+        
+        # Colorize active failures warning dynamically
+        fail_color = "red" if current_failed > 0 else "dim"
+        grid.add_row(f" └── 📩 [dim]{current_file:<40}[/dim]")
+        return grid
 
-        if ok:
-            converted += 1
-        else:
-            failed += 1
+    current_filename = "Starting..."
 
-    print(f"Conversion complete. Successfully converted {converted} files. Failed to convert {failed} files.")
+    # 3. Live Context Loop
+    with Live(make_layout(current_filename, failed), refresh_per_second=12) as live:
+        for msg_path in msg_files:
+            current_filename = msg_path.name
+            live.update(make_layout(current_filename, failed))
+
+            rel_path = msg_path.relative_to(root)
+            pdf_path = output_root / rel_path.with_suffix(".pdf")
+
+            ok = convert_msg_to_pdf(msg_path, pdf_path, inventory_csv=inventory_csv, output_root=output_root)
+
+            if ok:
+                converted += 1
+            else:
+                failed += 1
+
+            progress.advance(task_id)
+            live.update(make_layout(current_filename, failed))
+
+    # --- Final Detailed Summary Dashboard ---
+    from rich.console import Console
+    from rich.panel import Panel
+    
+    console = Console()
+    
+    # Determine look & feel based on job status
+    if failed == 0:
+        summary_title = "[white]Conversion Completed Successfully[/white]"
+        fail_style = "dim"
+    else:
+        summary_title = "[red]Conversion Completed with Errors[/red]"
+        fail_style = "bold red"
+
+    # Build the dashboard tree contents
+    summary_text = (
+        f"├── Total Files Detected: [bold cyan]{total_files}[/bold cyan]\n"
+        f"├── Successfully Saved:  [bold green]{converted}[/bold green]\n"
+        f"└── Failed Processing:   [{fail_style}]{failed}[/{fail_style}]"
+    )
+    
+    # Print the crisp panel break out
+    console.print()  # Spacer
+    console.print(
+        Panel(
+            summary_text,
+            title=summary_title,
+            title_align="left",
+            border_style="white" if failed == 0 else "red",
+            expand=False,
+        )
+    )
 
 
 if __name__ == "__main__":

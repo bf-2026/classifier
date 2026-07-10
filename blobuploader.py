@@ -8,7 +8,7 @@ load_dotenv()
 # ==========================
 # Configuration
 # ==========================
-ACCOUNT_URL = os.environ["ACCOUNT_URL"]
+ACCOUNT_URL = os.environ["BLOBSTORAGE_ACCOUNT_URL"]
 CONTAINER_NAME = "content"
 CSV_FILE = "./output/pdf_inventory.csv"
 
