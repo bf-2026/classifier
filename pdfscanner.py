@@ -57,7 +57,7 @@ class PDFScanner:
             inventory_store.write_rows(new_files)
 
         # --- 3. Final Detailed Summary Dashboard ---
-        summary_title = "[white]Scan & Export Completed Successfully[/white]"
+        summary_title = "[white]Scan & Export to csv Completed Successfully[/white]"
         summary_text = (
             f"├── Total PDFs Analyzed:  [bold cyan]{total_files}[/bold cyan]\n"
             f"├── New Records Saved:    [bold green]{added_files}[/bold green]\n"
