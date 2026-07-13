@@ -32,6 +32,40 @@ def test_append_row_if_missing_writes_header_and_skips_duplicates(tmp_path):
     assert len(rows) == 1
     assert rows[0]["filename"] == "sample.pdf"
     assert rows[0]["relative_path"] == "output/emails/sample.pdf"
+    assert rows[0]["upload_name"] == "output--emails--sample.pdf"
+
+
+def test_upload_name_uses_relative_path_with_windows_separators(tmp_path):
+    store = PdfInventoryCsv(tmp_path / "pdf_inventory.csv")
+
+    store.append_row_if_missing({"relative_path": r"output\emails\nested\sample.pdf"})
+
+    rows = read_csv_rows(tmp_path / "pdf_inventory.csv")
+    assert rows[0]["relative_path"] == r"output\emails\nested\sample.pdf"
+    assert rows[0]["upload_name"] == "output--emails--nested--sample.pdf"
+
+
+def test_upload_name_replaces_special_characters(tmp_path):
+    store = PdfInventoryCsv(tmp_path / "pdf_inventory.csv")
+
+    store.append_row_if_missing(
+        {
+            "relative_path": "docs/sample.pdf",
+            "upload_name": "docs/#sample report (final)+v2?.pdf",
+        }
+    )
+
+    rows = read_csv_rows(tmp_path / "pdf_inventory.csv")
+    assert rows[0]["upload_name"] == "docs-sample-report-final-v2.pdf"
+
+
+def test_generated_upload_name_replaces_special_characters(tmp_path):
+    store = PdfInventoryCsv(tmp_path / "pdf_inventory.csv")
+
+    store.append_row_if_missing({"relative_path": "docs/#sample report (final).pdf"})
+
+    rows = read_csv_rows(tmp_path / "pdf_inventory.csv")
+    assert rows[0]["upload_name"] == "docs---sample-report--final-.pdf"
 
 
 def test_load_existing_relative_paths_normalizes_separators(tmp_path):

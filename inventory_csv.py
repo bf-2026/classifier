@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ class PdfInventoryCsv:
         "filename",
         "full_path",
         "relative_path",
+        "upload_name",
         "group_key",
         "revision",
         "revision_number",
@@ -72,7 +74,22 @@ class PdfInventoryCsv:
                 writer.writerow(self._row_for_write(row))
 
     def _row_for_write(self, row: dict[str, str]) -> dict[str, str]:
-        return {field: row.get(field, "") for field in self.FIELDNAMES}
+        normalized_relative_path = self._normalize_relative_path(str(row.get("relative_path", "")))
+        upload_name = row.get("upload_name") or normalized_relative_path.replace("/", "--")
+        return {
+            field: (
+                self._sanitize_upload_name(upload_name)
+                if field == "upload_name"
+                else row.get(field, "")
+            )
+            for field in self.FIELDNAMES
+        }
+
+    def _sanitize_upload_name(self, upload_name: str) -> str:
+        """Keep upload names portable and free of special characters."""
+        sanitized = re.sub(r"[#?]", "", str(upload_name))
+        sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", sanitized)
+        return re.sub(r"-+(?=\.[A-Za-z0-9]+$)", "", sanitized).strip("-")
 
     def _normalize_relative_path(self, relative_path: str) -> str:
-        return Path(relative_path).as_posix()
+        return relative_path.replace("\\", "/")

@@ -35,8 +35,7 @@ with open(CSV_FILE, "r", encoding="utf-8-sig", newline="") as f:
 
     for row in reader:
         local_path = row["full_path"]
-        blob_name = row["relative_path"].replace("\\", "/").replace("/", "--")
-
+        blob_name = row["upload_name"]
 
         if not os.path.exists(local_path):
             print(f"[MISSING] {local_path}")
