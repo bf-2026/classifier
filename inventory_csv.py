@@ -75,10 +75,16 @@ class PdfInventoryCsv:
 
     def _row_for_write(self, row: dict[str, str]) -> dict[str, str]:
         normalized_relative_path = self._normalize_relative_path(str(row.get("relative_path", "")))
-        upload_name = row.get("upload_name") or normalized_relative_path.replace("/", "--")
+        upload_name = row.get("upload_name")
+        if upload_name:
+            sanitized_upload_name = self._sanitize_upload_name(upload_name)
+        else:
+            generated_name = normalized_relative_path.replace("/", "--")
+            sanitized_upload_name = self._sanitize_generated_upload_name(generated_name)
+
         return {
             field: (
-                self._sanitize_upload_name(upload_name)
+                sanitized_upload_name
                 if field == "upload_name"
                 else row.get(field, "")
             )
@@ -86,10 +92,29 @@ class PdfInventoryCsv:
         }
 
     def _sanitize_upload_name(self, upload_name: str) -> str:
-        """Keep upload names portable and free of special characters."""
-        sanitized = re.sub(r"[#?]", "", str(upload_name))
+        """Keep explicitly provided upload names portable and compact."""
+        sanitized = self._transliterate_german_characters(str(upload_name))
+        sanitized = re.sub(r"[#?]", "", sanitized)
         sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", sanitized)
         return re.sub(r"-+(?=\.[A-Za-z0-9]+$)", "", sanitized).strip("-")
+
+    def _sanitize_generated_upload_name(self, upload_name: str) -> str:
+        """Replace each unsupported generated-name character exactly once."""
+        upload_name = self._transliterate_german_characters(upload_name)
+        return re.sub(r"[^A-Za-z0-9._-]", "-", upload_name)
+
+    def _transliterate_german_characters(self, value: str) -> str:
+        """Convert German umlauts and sharp S to ASCII equivalents."""
+        replacements = str.maketrans({
+            "ä": "ae",
+            "ö": "oe",
+            "ü": "ue",
+            "Ä": "Ae",
+            "Ö": "Oe",
+            "Ü": "Ue",
+            "ß": "ss",
+        })
+        return value.translate(replacements)
 
     def _normalize_relative_path(self, relative_path: str) -> str:
         return relative_path.replace("\\", "/")

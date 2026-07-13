@@ -208,7 +208,8 @@ class PDFScanner:
 
 # --- Example Usage ---
 if __name__ == "__main__":
-    TARGET_FOLDER = r"C:\Users\DELL\Lucas\DPA\DeebKBB\Daten_fuer_KI"
+    TARGET_FOLDER = "./output/emails"
+    #TARGET_FOLDER = r"C:\Users\DELL\Lucas\DPA\DeebKBB\Daten_fuer_KI"
     CSV_OUTPUT = "./output/pdf_inventory.csv"
 
     scanner = PDFScanner(dir=TARGET_FOLDER, output=CSV_OUTPUT)

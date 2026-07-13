@@ -68,6 +68,35 @@ def test_generated_upload_name_replaces_special_characters(tmp_path):
     assert rows[0]["upload_name"] == "docs---sample-report--final-.pdf"
 
 
+def test_explicit_upload_name_transliterates_german_characters(tmp_path):
+    store = PdfInventoryCsv(tmp_path / "pdf_inventory.csv")
+
+    store.append_row_if_missing(
+        {
+            "relative_path": "docs/bericht.pdf",
+            "upload_name": "docs/Änderung Fräse Größe für Prüfungß.pdf",
+        }
+    )
+
+    rows = read_csv_rows(tmp_path / "pdf_inventory.csv")
+    assert rows[0]["upload_name"] == "docs-Aenderung-Fraese-Groesse-fuer-Pruefungss.pdf"
+
+
+def test_generated_upload_name_transliterates_german_characters(tmp_path):
+    store = PdfInventoryCsv(tmp_path / "pdf_inventory.csv")
+
+    store.append_row_if_missing({"relative_path": "docs/Schweißarbeiten/Änderung ü.pdf"})
+
+    rows = read_csv_rows(tmp_path / "pdf_inventory.csv")
+    assert rows[0]["upload_name"] == "docs--Schweissarbeiten--Aenderung-ue.pdf"
+
+
+def test_transliterate_german_characters_covers_lowercase_and_uppercase():
+    store = PdfInventoryCsv("pdf_inventory.csv")
+
+    assert store._transliterate_german_characters("ä ö ü Ä Ö Ü ß") == "ae oe ue Ae Oe Ue ss"
+
+
 def test_load_existing_relative_paths_normalizes_separators(tmp_path):
     csv_path = tmp_path / "pdf_inventory.csv"
     csv_path.write_text(
