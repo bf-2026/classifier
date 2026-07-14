@@ -41,7 +41,7 @@ def test_classify_latest_documents_updates_only_latest_rows(tmp_path, monkeypatc
             ]
         )
 
-    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root)
+    classifier = LLMClassifier(csv_path=csv_path)
     monkeypatch.setattr(
         classifier,
         "_classify_row",
@@ -109,7 +109,7 @@ def test_classify_latest_documents_skips_already_classified_rows(tmp_path, monke
             }
         )
 
-    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root)
+    classifier = LLMClassifier(csv_path=csv_path)
 
     def fail_if_called(_row, *args, **kwargs):
         raise AssertionError("_classify_row should not be called for already classified files")
@@ -144,7 +144,7 @@ def test_classify_latest_documents_reports_stage_updates(tmp_path, monkeypatch, 
         writer.writeheader()
         writer.writerow({"filename": "sample.pdf", "relative_path": "docs/sample.pdf", "is_latest": "True"})
 
-    classifier = LLMClassifier(csv_path=csv_path, pdf_root=pdf_root)
+    classifier = LLMClassifier(csv_path=csv_path)
     monkeypatch.setattr(classifier, "_render_first_pages", lambda pdf_path, max_pages=2: [b"image"])
     monkeypatch.setattr(classifier, "_call_llm", lambda pdf_path, images: '{"asset_type": "text", "confidence": 0.9, "reason": "ok"}')
     monkeypatch.setattr(classifier, "_parse_llm_json", lambda raw_text: {"asset_type": "text", "confidence": 0.9, "reason": "ok"})
@@ -153,7 +153,6 @@ def test_classify_latest_documents_reports_stage_updates(tmp_path, monkeypatch, 
 
     captured = capsys.readouterr()
     assert "sample.pdf" in captured.err
-    assert "-->" in captured.err
-    assert "text (0.90)" in captured.err
+    assert "text (0.9000)" in captured.err
 
 

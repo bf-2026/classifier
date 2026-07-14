@@ -11,16 +11,15 @@ This project processes document files through a local PDF inventory and an AI cl
 
 ## Project structure
 
-| File                    | Purpose                                                                                                   |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- |
-| `convertmsgpdf.py`      | Converts `.msg` files to PDFs, preserving the input folder structure and updating the inventory CSV.      |
-| `pdfscanner.py`         | Recursively scans PDFs, removes exact duplicates, extracts revision metadata, and marks latest revisions. |
-| `inventory_csv.py`      | Reads and writes the shared inventory CSV and generates portable upload names.                            |
-| `llm_classifier.py`     | Renders the first PDF pages and classifies latest documents with Azure OpenAI.                            |
-| `run_llm_classifier.py` | Runs the LLM classification workflow using the default project paths.                                     |
-| `blobuploader.py`       | Uploads files listed in the inventory CSV to Azure Blob Storage.                                          |
-| `llm.py`                | Small Azure OpenAI connectivity/example script.                                                           |
-| `tests/`                | Automated tests for conversion, inventory handling, scanning, and classification.                         |
+| File                | Purpose                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| `convertmsgpdf.py`  | Converts `.msg` files to PDFs, preserving the input folder structure and updating the inventory CSV.      |
+| `pdfscanner.py`     | Recursively scans PDFs, removes exact duplicates, extracts revision metadata, and marks latest revisions. |
+| `inventory_csv.py`  | Reads and writes the shared inventory CSV and generates portable upload names.                            |
+| `llm_classifier.py` | Renders the first PDF pages and classifies latest documents with Azure OpenAI.                            |
+| `blobuploader.py`   | Uploads files listed in the inventory CSV to Azure Blob Storage.                                          |
+| `llm.py`            | Small Azure OpenAI connectivity/example script.                                                           |
+| `tests/`            | Automated tests for conversion, inventory handling, scanning, and classification.                         |
 
 ## Requirements
 
@@ -106,7 +105,15 @@ python run_llm_classifier.py
 
 Only rows whose `is_latest` value is true-like (`True`, `1`, `yes`, or `y`) are sent for classification. Existing rows with an `llm_document_type` are skipped, making repeated runs incremental.
 
-The classifier adds these columns to `output/pdf_inventory.csv`:
+The default inventory is `./output/pdf_inventory.csv`. A custom inventory CSV may be supplied as the only optional argument:
+
+```text
+python run_llm_classifier.py path/to/pdf_inventory.csv
+```
+
+PDF paths are resolved from each inventory row and relative to the CSV directory when needed. Results are written back to that same CSV, and a Rich progress bar is displayed while latest documents are processed.
+
+The classifier adds these columns to the inventory CSV:
 
 - `llm_document_type`
 - `llm_confidence`

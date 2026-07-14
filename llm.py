@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+load_dotenv(override=True)
 
 endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
 deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
@@ -19,4 +19,4 @@ response = client.responses.create(
 )
 
 print(f"answer: {response.output[0]}")
-
+print(response.output_text)
