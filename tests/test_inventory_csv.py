@@ -17,6 +17,7 @@ def test_append_row_if_missing_writes_header_and_skips_duplicates(tmp_path):
         "filename": "sample.pdf",
         "full_path": str(tmp_path / "output" / "emails" / "sample.pdf"),
         "relative_path": "output/emails/sample.pdf",
+        "file_size": "12345",
         "group_key": "sample",
         "revision": "",
         "revision_number": "-1",
@@ -32,6 +33,7 @@ def test_append_row_if_missing_writes_header_and_skips_duplicates(tmp_path):
     assert len(rows) == 1
     assert rows[0]["filename"] == "sample.pdf"
     assert rows[0]["relative_path"] == "output/emails/sample.pdf"
+    assert rows[0]["file_size"] == "12345"
     assert rows[0]["upload_name"] == "output--emails--sample.pdf"
 
 
@@ -100,10 +102,26 @@ def test_transliterate_german_characters_covers_lowercase_and_uppercase():
 def test_load_existing_relative_paths_normalizes_separators(tmp_path):
     csv_path = tmp_path / "pdf_inventory.csv"
     csv_path.write_text(
-        "filename,full_path,relative_path,group_key,revision,revision_number,creation_time,is_latest,md5_hash\n"
-        "sample.pdf,C:\\tmp\\sample.pdf,docs\\nested\\sample.pdf,sample,,-1,2024-01-01 00:00:00,True,hash\n",
+        "filename,full_path,relative_path,file_size,group_key,revision,revision_number,creation_time,is_latest,md5_hash\n"
+        "sample.pdf,C:\\tmp\\sample.pdf,docs\\nested\\sample.pdf,42,sample,,-1,2024-01-01 00:00:00,True,hash\n",
         encoding="utf-8",
     )
 
     store = PdfInventoryCsv(csv_path)
     assert store.load_existing_relative_paths() == {"docs/nested/sample.pdf"}
+
+
+def test_scanner_writes_file_size(tmp_path):
+    target_dir = tmp_path / "emails"
+    target_dir.mkdir()
+    pdf_path = target_dir / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n12345")
+
+    output_csv = tmp_path / "pdf_inventory.csv"
+    scanner = __import__("pdfscanner").PDFScanner(dir=str(target_dir), output=str(output_csv))
+
+    scanner.scan_and_export()
+
+    rows = read_csv_rows(output_csv)
+    assert len(rows) == 1
+    assert rows[0]["file_size"] == str(pdf_path.stat().st_size)

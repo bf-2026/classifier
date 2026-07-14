@@ -10,6 +10,7 @@ class PdfInventoryCsv:
         "filename",
         "full_path",
         "relative_path",
+        "file_size",
         "upload_name",
         "group_key",
         "revision",

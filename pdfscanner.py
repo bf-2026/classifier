@@ -16,7 +16,7 @@ from rich.table import Table
 class PDFScanner:
     """Scan a directory for PDF files and export their metadata to CSV."""
 
-    def __init__(self, dir: str, output: str):
+    def __init__(self, dir: str, output: str = "./output/pdf_inventory.csv"):
         """Initialize the scanner.
 
         :param dir: The path to the folder you want to scan.
@@ -138,11 +138,13 @@ class PDFScanner:
                 group_key, revision = self._parse_revision_key(file_path.stem)
                 revision_number = self._parse_revision_number(revision)
                 creation_timestamp = self._file_creation_time(file_path)
+                file_size = file_path.stat().st_size
 
                 item = {
                     "filename": file_path.name,
                     "full_path": str(file_path.resolve()),
                     "relative_path": str(relative_path),
+                    "file_size": file_size,
                     "group_key": group_key,
                     "revision": revision,
                     "revision_number": revision_number,
@@ -210,7 +212,6 @@ class PDFScanner:
 if __name__ == "__main__":
     TARGET_FOLDER = "./output/emails"
     #TARGET_FOLDER = r"C:\Users\DELL\Lucas\DPA\DeebKBB\Daten_fuer_KI"
-    CSV_OUTPUT = "./output/pdf_inventory.csv"
 
-    scanner = PDFScanner(dir=TARGET_FOLDER, output=CSV_OUTPUT)
+    scanner = PDFScanner(dir=TARGET_FOLDER)
     scanner.scan_and_export()

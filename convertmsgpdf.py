@@ -91,11 +91,13 @@ def build_inventory_row(pdf_path: Path, output_root: Path) -> dict[str, str]:
     except ValueError:
         relative_path = pdf_path.as_posix()
 
-    creation_timestamp = pdf_path.stat().st_ctime
+    file_stats = pdf_path.stat()
+    creation_timestamp = file_stats.st_ctime
     return {
         "filename": pdf_path.name,
         "full_path": str(pdf_path.resolve()),
         "relative_path": relative_path,
+        "file_size": str(file_stats.st_size),
         "group_key": group_key,
         "revision": revision,
         "revision_number": str(parse_revision_number(revision)),
