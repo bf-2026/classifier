@@ -86,14 +86,28 @@ class LLMClassifier:
 
         if progress_context is None:
             for row in rows:
-                self._process_row(row, total_latest=total_latest, progress=None, console=console)
+                self._process_row(
+                    row,
+                    rows=rows,
+                    fieldnames=fieldnames,
+                    total_latest=total_latest,
+                    progress=None,
+                    console=console,
+                )
         else:
             with progress_context as progress:
                 task_id = progress.add_task("Classifying latest PDFs", total=total_latest)
                 for row in rows:
-                    self._process_row(row, total_latest=total_latest, progress=progress, console=console, task_id=task_id)
+                    self._process_row(
+                        row,
+                        rows=rows,
+                        fieldnames=fieldnames,
+                        total_latest=total_latest,
+                        progress=progress,
+                        console=console,
+                        task_id=task_id,
+                    )
 
-        self._write_rows_safely(rows, fieldnames)
         LOGGER.info("Classification workflow completed: %s", self.output_csv)
         return self.output_csv
 
@@ -118,13 +132,14 @@ class LLMClassifier:
         self,
         row: dict[str, Any],
         *,
+        rows: list[dict[str, Any]],
+        fieldnames: list[str],
         total_latest: int,
         progress: Progress | None,
         console: Console,
         task_id: int | None = None,
     ) -> None:
         filename = row.get("filename") or row.get("relative_path") or "<unknown>"
-        LOGGER.info("Starting row: %s", filename)
         if not self._is_latest(row):
             row.setdefault("llm_document_type", "")
             row.setdefault("llm_confidence", "")
@@ -147,6 +162,7 @@ class LLMClassifier:
             row["llm_reason"] = classification.reason
             row["llm_raw_json"] = classification.raw_json
             self._log_file_result(row, classification, skipped=False, console=console)
+            self._write_rows_safely(rows, fieldnames)
 
         if progress is not None and task_id is not None:
             progress.advance(task_id)
@@ -267,7 +283,6 @@ class LLMClassifier:
             reason=reason,
             raw_json=json.dumps(parsed, ensure_ascii=False),
         )
-        LOGGER.info("Classification produced for %s: type=%s confidence=%.4f", pdf_path, document_type, confidence_value)
         return classification
 
     def _resolve_pdf_path(self, row: dict[str, Any]) -> Path:
@@ -287,7 +302,6 @@ class LLMClassifier:
 
         for candidate in candidates:
             if candidate.exists():
-                LOGGER.info("Resolved PDF path: %s", candidate)
                 return candidate
 
         requested_path = relative_path or full_path or "<empty>"
@@ -298,7 +312,6 @@ class LLMClassifier:
         )
 
     def _render_first_pages(self, pdf_path: Path, max_pages: int = 2) -> list[bytes]:
-        LOGGER.info("Rendering up to %d page(s) from %s", max_pages, pdf_path)
         doc = fitz.open(pdf_path)
         images: list[bytes] = []
         try:
@@ -312,13 +325,12 @@ class LLMClassifier:
                 images.append(pixmap.tobytes("jpeg"))
         finally:
             doc.close()
-        LOGGER.info("Rendered %d page image(s) from %s", len(images), pdf_path)
         return images
 
     def _call_llm(self, pdf_path: Path, images: list[bytes]) -> str:
         prompt = (
             "You are a document layout analysis engine. Analyze the visual layout and text density of the provided image "
-            "of a PDF's first page to determine its primary asset type. "
+            "of a PDF's first few pages to determine its primary asset type. "
             "\n\n### Asset Definitions\n"
             "- 'text': The page primarily consists of readable text, structured documents, tables, data listings, or written correspondence (like letters and emails).\n"
             "- 'image': The page is primarily a technical drawing, engineering blueprint, schematic, map, chart, or photographic image with little to no paragraphs of readable text.\n"
@@ -335,7 +347,6 @@ class LLMClassifier:
             "}"
         )
 
-        LOGGER.info("Calling LLM for %s with %d image(s)", pdf_path, len(images))
         content = [{"type": "input_text", "text": prompt}]
         for image_bytes in images:
             image_b64 = self._bytes_to_base64(image_bytes)
@@ -345,7 +356,7 @@ class LLMClassifier:
                     "image_url": f"data:image/jpeg;base64,{image_b64}",
                 }
             )
-        LOGGER.info("Sending response request")
+        LOGGER.info("Sending response request to LLM")
         response = self.client.responses.create(
             model=self.deployment_name,
             input=[{"role": "user", "content": content}],
@@ -355,7 +366,6 @@ class LLMClassifier:
         if not text:
             LOGGER.error("LLM returned an empty response for %s", pdf_path)
             raise ValueError(f"LLM returned an empty response for {pdf_path}")
-        LOGGER.info("LLM response received for %s", pdf_path)
         return text
 
     def _extract_response_text(self, response: Any) -> str:
@@ -379,7 +389,6 @@ class LLMClassifier:
         return "\n".join(pieces).strip()
 
     def _parse_llm_json(self, raw_text: str) -> dict[str, Any]:
-        LOGGER.info("Parsing LLM JSON response")
         cleaned = self._strip_code_fences(raw_text.strip())
         try:
             parsed = json.loads(cleaned)
@@ -393,7 +402,6 @@ class LLMClassifier:
         if not isinstance(parsed, dict):
             LOGGER.error("LLM response JSON was not an object")
             raise ValueError(f"LLM response JSON must be an object: {raw_text}")
-        LOGGER.info("LLM JSON response parsed successfully")
         return parsed
 
     def _strip_code_fences(self, text: str) -> str:
@@ -431,7 +439,6 @@ class LLMClassifier:
                     writer.writerow({key: row.get(key, "") for key in fieldnames})
             temp_path.replace(self.output_csv)
             LOGGER.info("CSV replaced successfully: %s", self.output_csv)
-            print(f"Classified CSV written: {self.output_csv}")
         except Exception:
             LOGGER.exception("Failed to write classified CSV: %s", self.output_csv)
             if temp_path.exists():
