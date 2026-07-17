@@ -15,6 +15,7 @@ This project processes document files through a local PDF inventory and an AI cl
 | ------------------- | --------------------------------------------------------------------------------------------------------- |
 | `convertmsgpdf.py`  | Converts `.msg` files to PDFs, preserving the input folder structure and updating the inventory CSV.      |
 | `pdfscanner.py`     | Recursively scans PDFs, removes exact duplicates, extracts revision metadata, and marks latest revisions. |
+| `pdfreducer.py`     | Reduces PDF size with PyMuPDF and can remove embedded email attachments.                                  |
 | `inventory_csv.py`  | Reads and writes the shared inventory CSV and generates portable upload names.                            |
 | `llm_classifier.py` | Renders the first PDF pages and classifies latest documents with Azure OpenAI.                            |
 | `blobuploader.py`   | Uploads files listed in the inventory CSV to Azure Blob Storage.                                          |
@@ -81,7 +82,18 @@ python convertmsgpdf.py --input-dir data --output-dir output/emails --inventory-
 
 The converter extracts sender, recipients, date, subject, and message body. It supports plain-text and HTML message bodies and appends each converted PDF to the inventory unless the relative path is already present.
 
-### 2. Scan PDFs and update the inventory
+### 2. Reduce oversized PDFs
+
+```python
+from pdfreducer import PDFReducer
+
+reducer = PDFReducer()
+reducer.reduce_inventory("output/pdf_inventory_email.csv")
+```
+
+`PDFReducer` reads each PDF path from the inventory's `full_path` column, removes embedded files by default, applies PyMuPDF garbage collection and stream compression, and updates the inventory with the reduced path and size. Set `remove_embedded_files=False` to preserve attachments. Individual files and recursive folders are also supported with `reduce()` and `reduce_directory()`.
+
+### 3. Scan PDFs and update the inventory
 
 ```text
 python pdfscanner.py

@@ -251,6 +251,8 @@ class PDFScanner:
 
                     "file_size": file_size,
 
+                    "reduced": "True" if file_path.stem.lower().endswith("-reduced") else "False",
+
                     "group_key": group_key,
 
                     "revision": revision,

@@ -11,6 +11,7 @@ class PdfInventoryCsv:
         "full_path",
         "relative_path",
         "file_size",
+        "reduced",
         "upload_name",
         "group_key",
         "revision",
@@ -87,7 +88,7 @@ class PdfInventoryCsv:
             field: (
                 sanitized_upload_name
                 if field == "upload_name"
-                else row.get(field, "")
+                else row.get(field, "False" if field == "reduced" else "")
             )
             for field in self.FIELDNAMES
         }

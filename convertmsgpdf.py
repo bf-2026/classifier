@@ -98,6 +98,7 @@ def build_inventory_row(pdf_path: Path, output_root: Path) -> dict[str, str]:
         "full_path": str(pdf_path.resolve()),
         "relative_path": relative_path,
         "file_size": str(file_stats.st_size),
+        "reduced": "False",
         "group_key": group_key,
         "revision": revision,
         "revision_number": str(parse_revision_number(revision)),
